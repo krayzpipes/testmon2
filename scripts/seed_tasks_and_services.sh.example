@@ -13,7 +13,7 @@
 # get things rolling. Then you can use ecs-deploy to update / deploy. You should only need to run
 # this seed script for your first deployment.
 
-DESIRED_TASK_COUNT=2
+DESIRED_TASK_COUNT=1
 ECR_IMAGE_TAG=$(git rev-parse --short HEAD)
 ECR_IMAGE_URL=xxxxxxxxxxxx.dkr.ecr.us-east-1.amazonaws.com/testmon
 ECS_CLUSTER_ARN=arn:aws:ecs:us-east-1:xxxxxxxxxxxx:cluster/testmon
@@ -48,9 +48,24 @@ register_task_definition () {
 
 create_ecs_service () {
   echo "Checking to see if service already exists"
-  if [ "0" == "$(aws ecs describe-services --cluster $ECS_SERVICE_NAME --service $ECS_SERVICE_NAME | jq '.services | length')" ]
+  service_count=$(aws ecs describe-services --cluster $ECS_SERVICE_NAME --service $ECS_SERVICE_NAME | jq '.services | length')
+  create_flag=false
+  if [ "1" == "${service_count}" ]
   then
-    echo "Service does not exists. Creating new service."
+    service_status=$(aws ecs describe-services --cluster $ECS_SERVICE_NAME --service $ECS_SERVICE_NAME | jq '.services[0].status')
+    if [ "${service_status}" == "INACTIVE" ]
+    then
+      echo "Found service in INACTIVE state... will recreate service..."
+      create_flag=true
+    fi
+  elif [ "0" == "${service_count}" ]
+  then
+    echo "Service does not exists. Will create new service..."
+    create_flag=true
+    s
+  fi
+  if [ $create_flag ]
+  then
     service_response="$(aws ecs create-service --cli-input-json "${ECS_SERVICE_JSON}")"
     if [ "$?" != "0" ]
     then
@@ -73,9 +88,9 @@ TASK_DEFINITION_JSON=$(cat <<EOF
     {
       "portMappings": [
         {
-          "hostPort": 80,
+          "hostPort": 8080,
           "protocol": "tcp",
-          "containerPort": 80
+          "containerPort": 8080
         }
       ],
       "cpu": 256,
@@ -117,7 +132,7 @@ ECS_SERVICE_JSON=$(cat <<EOF
     {
       "targetGroupArn": "$TARGET_GROUP_ARN",
       "containerName": "testmon",
-      "containerPort": 80
+      "containerPort": 8080
     }
   ],
   "desiredCount": $DESIRED_TASK_COUNT,
