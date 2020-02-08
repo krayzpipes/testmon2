@@ -1,0 +1,170 @@
+# Python CircleCI 2.1 configuration file
+#
+# Check https://circleci.com/docs/2.1/language-python/ for more details
+#
+
+# YAML anchors
+master_only: &master_only
+  branches:
+    only: master
+
+ignore_master: &ignore_master
+  branches:
+    ignore: master
+
+
+# CircleCI config
+version: 2.1
+orbs:
+  aws-ecr: circleci/aws-ecr@6.7.0
+jobs:
+  testmon_test:
+    docker:
+      - image: python:3.7
+    working_directory: ~/repo
+    steps:
+      - checkout
+      # Download and cache dependencies
+      - restore_cache:
+          keys:
+            - v1-test-dependencies-{{ checksum "pyproject.toml" }}
+            # fallback to using the latest cache if no exact match is found
+            - v1-test-dependencies-
+      - run:
+          name: setup environment
+          command: |
+            export PYTHONPATH=$(pwd):$(pwd)/src
+            echo "Current PYTHONPATH is:"
+            echo $PYTHONPATH
+            echo "Current directory:"
+            ls -alh
+      - run:
+          name: install dependencies
+          command: |
+            python3.7 -m venv venv
+            source venv/bin/activate
+            pip install poetry
+            poetry install --no-interaction --no-ansi
+      - run:
+          name: lint with flake8
+          command: |
+            source venv/bin/activate
+            flake8 src/testmon/*
+      - run:
+          name: lint with pylint
+          command: |
+            source venv/bin/activate
+            pylint src/testmon/*
+      - run:
+          name: bandit static analysis
+          command: |
+            source venv/bin/activate
+            bandit -rv src/testmon/*
+      - run:
+          name: run tests
+          command: |
+            source venv/bin/activate
+            pytest -v
+      - save_cache:
+          paths:
+            - ./venv
+          key: v1-dependencies-{{ checksum "pyproject.toml" }}
+      - store_artifacts:
+          path: test-reports
+          destination: test-reports
+  build-only:
+    docker:
+      - image: circleci/python:3.7
+    working_directory: ~/repo
+    steps:
+      - checkout
+      - setup_remote_docker
+      - restore_cache:
+          keys:
+            - testmon-{{ .Branch }}
+          paths:
+            - /caches/testmon.tar
+      - run:
+          name: Install dependencies
+          command: |
+            pip3 install awscli
+            sudo apt-get update
+            sudo apt-get install -y jq
+      - run:
+          name: Build image
+          command: |
+            tag=$(git rev-parse --short HEAD)
+            repo=$(aws ecr describe-repositories | jq -r '.repositories[] | select(.repositoryName | match("testmon")) | .repositoryUri')
+            docker build -t $repo:$tag .
+            docker rmi $repo:$tag
+  build-and-push-to-ecr:
+    docker:
+      - image: circleci/python:3.7
+    working_directory: ~/repo
+    steps:
+      - checkout
+      - setup_remote_docker
+      - restore_cache:
+          keys:
+            - testmon-{{ .Branch }}
+          paths:
+            - /caches/testmon.tar
+      - run:
+          name: Install dependencies
+          command: |
+            pip3 install awscli
+            sudo apt-get update
+            sudo apt-get install -y jq
+      - run:
+          name: Build, tag, and push image to ECR
+          command: |
+            tag=$(git rev-parse --short HEAD)
+            jq_filter='.repositories[] | select(.repositoryName | match("'"$APP_NAME"'")) | .repositoryUri'
+            repo=$(aws ecr describe-repositories | jq -r "$jq_filter")
+            docker build -t $repo:$tag .
+            docker_ecr_login=$(aws ecr get-login --no-include-email)
+            $docker_ecr_login
+            docker push $repo:$tag
+  deploy-to-ecs:
+    docker:
+      - image: circleci/python:3.7
+    working_directory: ~/repo
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: |
+            pip3 install awscli
+            sudo apt-get update
+            sudo apt-get install -y jq
+            curl https://raw.githubusercontent.com/silinternational/ecs-deploy/master/ecs-deploy | sudo tee /usr/bin/ecs-deploy
+            sudo chmod +x /usr/bin/ecs-deploy
+      - deploy:
+          name: Deploy to ECS
+          command: |
+            tag=$(git rev-parse --short HEAD)
+            jq_filter='.repositories[] | select(.repositoryName | match("'"$APP_NAME"'")) | .repositoryUri'
+            repo=$(aws ecr describe-repositories | jq -r "$jq_filter")
+            ecs-deploy --service-name $ECS_SERVICE_NAME --cluster $ECS_SERVICE_NAME -i "$repo:$tag"
+
+workflows:
+  version: 2.1
+  test_build_and_push_image:
+    jobs:
+      - testmon_test
+      - build-only:
+          context: testmon
+          filters: *ignore_master
+          requires:
+            - testmon_test
+      - build-and-push-to-ecr:
+          context: testmon
+          filters: *master_only
+          requires:
+            - testmon_test
+      - deploy-to-ecs:
+          context: testmon
+          filters: *master_only
+          requires:
+            - testmon_test
+            - build-and-push-to-ecr
