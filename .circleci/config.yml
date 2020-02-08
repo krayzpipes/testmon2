@@ -49,17 +49,17 @@ jobs:
           name: lint with flake8
           command: |
             source venv/bin/activate
-            flake8 src/testmon/*
+            flake8 -v src/testmon/*
       - run:
           name: lint with pylint
           command: |
             source venv/bin/activate
-            pylint src/testmon/*
+            pylint -v src/testmon/*
       - run:
           name: bandit static analysis
           command: |
             source venv/bin/activate
-            bandit -rv src/testmon/*
+            bandit -v src/testmon/*
       - run:
           name: run tests
           command: |
@@ -153,17 +153,17 @@ workflows:
     jobs:
       - testmon_test
       - build-only:
-          context: testmon
+          context: testmon2
           filters: *ignore_master
           requires:
             - testmon_test
       - build-and-push-to-ecr:
-          context: testmon
+          context: testmon2
           filters: *master_only
           requires:
             - testmon_test
       - deploy-to-ecs:
-          context: testmon
+          context: testmon2
           filters: *master_only
           requires:
             - testmon_test

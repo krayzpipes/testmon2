@@ -12,9 +12,9 @@ from starlette.requests import Request
 class NowOut(BaseModel):  # pylint: disable=R0903
     """Pydantic validator for api json response."""
 
-    status = str
-    time = str
-    ip = str
+    status: str
+    time: str
+    ip: str
 
 
 app = FastAPI()  # pylint: disable=C0103
@@ -29,20 +29,14 @@ def get_tomorrow(today: datetime) -> datetime:
 async def now(request: Request):
     """Return the current time."""
     _now = datetime.now()
-    return {
-        "status": "alive",
-        "now": _now.ctime(),
-        "ip": request.client.host,
-    }
+    out = NowOut(status="alive", time=_now.ctime(), ip=request.client.host)
+    return out.dict()
 
 
 @app.get("/tomorrow", response_model=NowOut)
 async def tomorrow(request: Request):
     """Return exactly one day from now."""
     _now = datetime.now()
-    _future = get_tomorrow(_now)
-    return {
-        "status": "alive",
-        "now": _future.ctime(),
-        "ip": request.client.host,
-    }
+    _tomorrow = get_tomorrow(_now)
+    out = NowOut(status="alive", time=_tomorrow.ctime(), ip=request.client.host)
+    return out.dict()

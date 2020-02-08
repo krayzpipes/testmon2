@@ -1,6 +1,6 @@
 resource "aws_lb_target_group" "testmon" {
   name        = "tf-testmon-dev-lb-tg"
-  port        = 80
+  port        = 8080
   protocol    = "TCP"
   target_type = "ip"
   vpc_id      = module.testmon_vpc.vpc_id

@@ -21,10 +21,6 @@ output "ecr_image_repo_url" {
   value = aws_ecr_repository.testmon_repo.repository_url
 }
 
-output "ecr_image_redis_url" {
-  value = aws_ecr_repository.redis_repo.repository_url
-}
-
 output "target_group_arn" {
   value = aws_lb_target_group.testmon.arn
 }

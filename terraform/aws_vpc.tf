@@ -30,7 +30,7 @@ module "testmon_ecs_sg" {
   # Required for tasks to pull images from ECR
   egress_cidr_blocks                    = ["0.0.0.0/0"]
   egress_rules                          = ["https-443-tcp"]
-  # Required for traffic from clients
-  ingress_cidr_blocks                   = ["10.0.0.0/8"]
-  ingress_rules                         = ["http-80-tcp"]
+  # Required for traffic from load balancers
+  ingress_cidr_blocks = module.testmon_vpc.public_subnets_cidr_blocks
+  ingress_rules = ["http-8080-tcp"]
 }

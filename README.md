@@ -1,27 +1,16 @@
 # testmon
 Testing some CI/CD pipeline stuff
 
-Master: [![CircleCI](https://circleci.com/gh/krayzpipes/testmon/tree/master.svg?style=svg)](https://circleci.com/gh/krayzpipes/testmon/tree/master)
-
-
 ## Overview
 
 This repo was built to test out docker and CI/CD pipelines.
 
 #### The Application
 Features of the test application:
-- Python FastAPI framework with Redis backend
-- Designed to alert the client if their jobs took to long to run (ex: Cronjob)
-    - HTTP POST body with `{"app_id": "abcd", "action": "start", "duration": 3600}` would:
-        - Store the app_id as a key in the redis backend.
-        - Start the monitor by taking the sum of the current time + duration, and saving it as
-        the value in the redis backend. This is considered the `expiration` time.
-    - HTTP POST body with `{"app_id": "abcd", "action": "stop"}` would:
-        - Look for a key named `abcd` in the redis backend.
-        - Take the value from the redis backend and see if the current time is before or after
-        the value that was stored in the redis backend.
-        - If the current time is later than the expiration time, then the respone to this HTTP POST
-        will contain a message saying the job was late.
+- Python FastAPI framework
+- Two endpoints
+    - `/now` returns a status, current server time, and the client IP as seen by the server
+    - `/tomorrow` returns a status, current server time + 1 day, and the client IP as seen by the server.
 
 #### Terraform
 The terraform template creates:
@@ -30,23 +19,13 @@ The terraform template creates:
         - Elasticache subnets
         - Fargate task subnets
         - Public subnets for NAT Gateway and Load Balancer
-    - DNS association with private Route53 zone 'testmon.local'
     - Security groups
-        - Load balancer
-            - ingress traffic from CIDRs in terraform.tfvars
-            - egress HTTP to ECS tasks/target group
         - ECS
-            - ingress HTTP from load balancers
+            - ingress TCP 80 from load balancer subnets
             - egress HTTPS to 0.0.0.0/0 in order to pull imagees from ECR
-            - egress to the Redis Elasticache cluster
-        - Elasitache
-            - Ingress from ECS
 - **IAM**
     - CircleCI User, Role, and Role policy for pipeline automation
     - Roles/policies for ECS Task Execution
-- **Route53**
-    - Private hosted zone `testmon.local` associated with the created VPC
-    - CNAME record `redis.testmon.local` that points to the Elasticache node
 - **ECR**
     - Registry for testmon
 - **ECS**
@@ -83,67 +62,32 @@ The terraform template creates:
 for Fargate to begin running the application.
 5. Get the load balancer DNS name to interact with the application.
 
-## Local app testing
-
-#### Docker image with python dependencies
-```bash
-$ docker build -t krayzpipes/pylibraries -f pylibraries.Dockerfile .
-```
-
 #### Docker image for the app
 ```bash
-$ docker build -t krayzpipes/dev-testmon -f dev.Dockerfile .
+$ docker build -t testmon:dev .
 ```
-
-OR you can build it in one file (takes longer so not as good for dev) if you plan
-on deploying to a registry or as part of a pipeline:
-
-#### Docker image for releases
-This installs all dependencies, copies over source code, all in one.
+#### Run the container
 ```bash
-$ docker build -t krayzpipes/testmon .
-```
-
-#### Docker image for redis
-```bash
-$ docker build -t -f redis.Dockerfile krayzpipes/redis .
-```
-
-#### Create docker network
-```bash
-# We'll use this to let the containers talk to each other.
-$ docker network create testmon-net
-```
-
-#### Run the containers
-```bash
-# Make sure you name the redis container red1... otherwise change
-# your dockerfile to reflect the actual name you designated.
-$ docker run --network testmon-net --name red1 -d krayzpipes/redis
-$ docker run --network testmon-net --name web1 -d -p 8080:80 krayzpipes/testmon
-```
-
-or 
-
-```bash
-$ docker run --network testmon-net --name red1 -d krayzpipes/redis
-$ docker run --network testmon-net --name webdev1  -d krayzpipes/dev-testmon
+$ docker run --name testmon2 -d -p 8080:8080 krayzpipes/testmon
 ```
 
 ## Test it with requests
 ```python
-import json
+>>> import requests
+>>> r = requests.get('http://127.0.0.1:8080/now')
+>>> r.status_code
+200
+>>> r.json()
+{'status': 'alive', 'time': 'Sat Feb  8 20:52:44 2020', 'ip': '172.16.0.5'}
+```
 
-import requests
-
-start = {"app_id": "abcdefg", "action": "start", "duration": 3600}
-stop = {"app_id": "abcdefg", "action": "stop"}
-
-start_request = requests.post('http://127.0.0.1:8080/testmon/monitor', json=start)
-print(start_request)
-
-stop_request = requests.post('http://127.0.0.1:8080/testmon/monitor', json=stop)
-print(stop_request)
+```python
+>>> import requests
+>>> r = requests.get('http://127.0.0.1:8080/tomorrow')
+>>> r.status_code
+200
+>>> r.json()
+{'status': 'alive', 'time': 'Sun Feb  9 20:53:51 2020', 'ip': '172.16.0.5'}
 ```
 
 # Terraform
