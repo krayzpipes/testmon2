@@ -153,17 +153,17 @@ workflows:
     jobs:
       - testmon_test
       - build-only:
-          context: testmon2
+          context: testmon
           filters: *ignore_master
           requires:
             - testmon_test
       - build-and-push-to-ecr:
-          context: testmon2
+          context: testmon
           filters: *master_only
           requires:
             - testmon_test
       - deploy-to-ecs:
-          context: testmon2
+          context: testmon
           filters: *master_only
           requires:
             - testmon_test
